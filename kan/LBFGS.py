@@ -2,7 +2,8 @@ import torch
 from functools import reduce
 from torch.optim import Optimizer
 
-__all__ = ['LBFGS']
+__all__ = ["LBFGS"]
+
 
 def _cubic_interpolate(x1, f1, g1, x2, f2, g2, bounds=None):
     # ported from https://github.com/torch/optim/blob/master/polyinterp.lua
@@ -29,20 +30,12 @@ def _cubic_interpolate(x1, f1, g1, x2, f2, g2, bounds=None):
             min_pos = x1 - (x1 - x2) * ((g1 + d2 - d1) / (g1 - g2 + 2 * d2))
         return min(max(min_pos, xmin_bound), xmax_bound)
     else:
-        return (xmin_bound + xmax_bound) / 2.
+        return (xmin_bound + xmax_bound) / 2.0
 
 
-def _strong_wolfe(obj_func,
-                  x,
-                  t,
-                  d,
-                  f,
-                  g,
-                  gtd,
-                  c1=1e-4,
-                  c2=0.9,
-                  tolerance_change=1e-9,
-                  max_ls=25):
+def _strong_wolfe(
+    obj_func, x, t, d, f, g, gtd, c1=1e-4, c2=0.9, tolerance_change=1e-9, max_ls=25
+):
     # ported from https://github.com/torch/optim/blob/master/lswolfe.lua
     d_norm = d.abs().max()
     g = g.clone(memory_format=torch.contiguous_format)
@@ -57,7 +50,7 @@ def _strong_wolfe(obj_func,
     ls_iter = 0
     while ls_iter < max_ls:
         # check conditions
-        #print(f_prev, f_new, g_new)
+        # print(f_prev, f_new, g_new)
         if f_new > (f + c1 * t * gtd) or (ls_iter > 1 and f_new >= f_prev):
             bracket = [t_prev, t]
             bracket_f = [f_prev, f_new]
@@ -84,13 +77,8 @@ def _strong_wolfe(obj_func,
         max_step = t * 10
         tmp = t
         t = _cubic_interpolate(
-            t_prev,
-            f_prev,
-            gtd_prev,
-            t,
-            f_new,
-            gtd_new,
-            bounds=(min_step, max_step))
+            t_prev, f_prev, gtd_prev, t, f_new, gtd_new, bounds=(min_step, max_step)
+        )
 
         # next step
         t_prev = tmp
@@ -101,7 +89,6 @@ def _strong_wolfe(obj_func,
         ls_func_evals += 1
         gtd_new = g_new.dot(d)
         ls_iter += 1
-        
 
     # reached max number of iterations?
     if ls_iter == max_ls:
@@ -121,8 +108,14 @@ def _strong_wolfe(obj_func,
             break
 
         # compute new trial value
-        t = _cubic_interpolate(bracket[0], bracket_f[0], bracket_gtd[0],
-                               bracket[1], bracket_f[1], bracket_gtd[1])
+        t = _cubic_interpolate(
+            bracket[0],
+            bracket_f[0],
+            bracket_gtd[0],
+            bracket[1],
+            bracket_f[1],
+            bracket_gtd[1],
+        )
 
         # test that we are making sufficient progress:
         # in case `t` is so close to boundary, we mark that we are making
@@ -176,7 +169,7 @@ def _strong_wolfe(obj_func,
             bracket_g[low_pos] = g_new.clone(memory_format=torch.contiguous_format)
             bracket_gtd[low_pos] = gtd_new
 
-    #print(bracket)
+    # print(bracket)
     if len(bracket) == 1:
         t = bracket[0]
         f_new = bracket_f[0]
@@ -186,7 +179,6 @@ def _strong_wolfe(obj_func,
         f_new = bracket_f[low_pos]
         g_new = bracket_g[low_pos]
     return f_new, g_new, t, ls_func_evals
-
 
 
 class LBFGS(Optimizer):
@@ -222,16 +214,18 @@ class LBFGS(Optimizer):
         line_search_fn (str): either 'strong_wolfe' or None (default: None).
     """
 
-    def __init__(self,
-                 params,
-                 lr=1,
-                 max_iter=20,
-                 max_eval=None,
-                 tolerance_grad=1e-7,
-                 tolerance_change=1e-9,
-                 tolerance_ys=1e-32,
-                 history_size=100,
-                 line_search_fn=None):
+    def __init__(
+        self,
+        params,
+        lr=1,
+        max_iter=20,
+        max_eval=None,
+        tolerance_grad=1e-7,
+        tolerance_change=1e-9,
+        tolerance_ys=1e-32,
+        history_size=100,
+        line_search_fn=None,
+    ):
         if max_eval is None:
             max_eval = max_iter * 5 // 4
         defaults = dict(
@@ -242,19 +236,23 @@ class LBFGS(Optimizer):
             tolerance_change=tolerance_change,
             tolerance_ys=tolerance_ys,
             history_size=history_size,
-            line_search_fn=line_search_fn)
+            line_search_fn=line_search_fn,
+        )
         super().__init__(params, defaults)
 
         if len(self.param_groups) != 1:
-            raise ValueError("LBFGS doesn't support per-parameter options "
-                             "(parameter groups)")
+            raise ValueError(
+                "LBFGS doesn't support per-parameter options (parameter groups)"
+            )
 
-        self._params = self.param_groups[0]['params']
+        self._params = self.param_groups[0]["params"]
         self._numel_cache = None
 
     def _numel(self):
         if self._numel_cache is None:
-            self._numel_cache = reduce(lambda total, p: total + p.numel(), self._params, 0)
+            self._numel_cache = reduce(
+                lambda total, p: total + p.numel(), self._params, 0
+            )
         return self._numel_cache
 
     def _gather_flat_grad(self):
@@ -275,7 +273,7 @@ class LBFGS(Optimizer):
         for p in self._params:
             numel = p.numel()
             # view as to avoid deprecated pointwise semantics
-            p.add_(update[offset:offset + numel].view_as(p), alpha=step_size)
+            p.add_(update[offset : offset + numel].view_as(p), alpha=step_size)
             offset += numel
         assert offset == self._numel()
 
@@ -293,7 +291,6 @@ class LBFGS(Optimizer):
         self._set_param(x)
         return loss, flat_grad
 
-
     @torch.no_grad()
     def step(self, closure):
         """Perform a single optimization step.
@@ -302,35 +299,35 @@ class LBFGS(Optimizer):
             closure (Callable): A closure that reevaluates the model
                 and returns the loss.
         """
-        
+
         torch.manual_seed(0)
-        
+
         assert len(self.param_groups) == 1
 
         # Make sure the closure is always called with grad enabled
         closure = torch.enable_grad()(closure)
 
         group = self.param_groups[0]
-        lr = group['lr']
-        max_iter = group['max_iter']
-        max_eval = group['max_eval']
-        tolerance_grad = group['tolerance_grad']
-        tolerance_change = group['tolerance_change']
-        tolerance_ys = group['tolerance_ys']
-        line_search_fn = group['line_search_fn']
-        history_size = group['history_size']
+        lr = group["lr"]
+        max_iter = group["max_iter"]
+        max_eval = group["max_eval"]
+        tolerance_grad = group["tolerance_grad"]
+        tolerance_change = group["tolerance_change"]
+        tolerance_ys = group["tolerance_ys"]
+        line_search_fn = group["line_search_fn"]
+        history_size = group["history_size"]
 
         # NOTE: LBFGS has only global state, but we register it as state for
         # the first param, because this helps with casting in load_state_dict
         state = self.state[self._params[0]]
-        state.setdefault('func_evals', 0)
-        state.setdefault('n_iter', 0)
+        state.setdefault("func_evals", 0)
+        state.setdefault("n_iter", 0)
 
         # evaluate initial f(x) and df/dx
         orig_loss = closure()
         loss = float(orig_loss)
         current_evals = 1
-        state['func_evals'] += 1
+        state["func_evals"] += 1
 
         flat_grad = self._gather_flat_grad()
         opt_cond = flat_grad.abs().max() <= tolerance_grad
@@ -340,26 +337,26 @@ class LBFGS(Optimizer):
             return orig_loss
 
         # tensors cached in state (for tracing)
-        d = state.get('d')
-        t = state.get('t')
-        old_dirs = state.get('old_dirs')
-        old_stps = state.get('old_stps')
-        ro = state.get('ro')
-        H_diag = state.get('H_diag')
-        prev_flat_grad = state.get('prev_flat_grad')
-        prev_loss = state.get('prev_loss')
+        d = state.get("d")
+        t = state.get("t")
+        old_dirs = state.get("old_dirs")
+        old_stps = state.get("old_stps")
+        ro = state.get("ro")
+        H_diag = state.get("H_diag")
+        prev_flat_grad = state.get("prev_flat_grad")
+        prev_loss = state.get("prev_loss")
 
         n_iter = 0
         # optimize for a max of max_iter iterations
         while n_iter < max_iter:
             # keep track of nb of iterations
             n_iter += 1
-            state['n_iter'] += 1
+            state["n_iter"] += 1
 
             ############################################################
             # compute gradient descent direction
             ############################################################
-            if state['n_iter'] == 1:
+            if state["n_iter"] == 1:
                 d = flat_grad.neg()
                 old_dirs = []
                 old_stps = []
@@ -381,7 +378,7 @@ class LBFGS(Optimizer):
                     # store new direction/step
                     old_dirs.append(y)
                     old_stps.append(s)
-                    ro.append(1. / ys)
+                    ro.append(1.0 / ys)
 
                     # update scale of initial Hessian approximation
                     H_diag = ys / y.dot(y)  # (y*y)
@@ -390,9 +387,9 @@ class LBFGS(Optimizer):
                 # multiplied by the gradient
                 num_old = len(old_dirs)
 
-                if 'al' not in state:
-                    state['al'] = [None] * history_size
-                al = state['al']
+                if "al" not in state:
+                    state["al"] = [None] * history_size
+                al = state["al"]
 
                 # iteration in L-BFGS loop collapsed to use just one buffer
                 q = flat_grad.neg()
@@ -417,8 +414,8 @@ class LBFGS(Optimizer):
             # compute step length
             ############################################################
             # reset initial guess for step size
-            if state['n_iter'] == 1:
-                t = min(1., 1. / flat_grad.abs().sum()) * lr
+            if state["n_iter"] == 1:
+                t = min(1.0, 1.0 / flat_grad.abs().sum()) * lr
             else:
                 t = lr
 
@@ -440,8 +437,10 @@ class LBFGS(Optimizer):
 
                     def obj_func(x, t, d):
                         return self._directional_evaluate(closure, x, t, d)
+
                     loss, flat_grad, t, ls_func_evals = _strong_wolfe(
-                        obj_func, x_init, t, d, loss, flat_grad, gtd)
+                        obj_func, x_init, t, d, loss, flat_grad, gtd
+                    )
                 self._add_grad(t, d)
                 opt_cond = flat_grad.abs().max() <= tolerance_grad
             else:
@@ -459,7 +458,7 @@ class LBFGS(Optimizer):
 
             # update func eval
             current_evals += ls_func_evals
-            state['func_evals'] += ls_func_evals
+            state["func_evals"] += ls_func_evals
 
             ############################################################
             # check conditions
@@ -481,13 +480,13 @@ class LBFGS(Optimizer):
             if abs(loss - prev_loss) < tolerance_change:
                 break
 
-        state['d'] = d
-        state['t'] = t
-        state['old_dirs'] = old_dirs
-        state['old_stps'] = old_stps
-        state['ro'] = ro
-        state['H_diag'] = H_diag
-        state['prev_flat_grad'] = prev_flat_grad
-        state['prev_loss'] = prev_loss
+        state["d"] = d
+        state["t"] = t
+        state["old_dirs"] = old_dirs
+        state["old_stps"] = old_stps
+        state["ro"] = ro
+        state["H_diag"] = H_diag
+        state["prev_flat_grad"] = prev_flat_grad
+        state["prev_loss"] = prev_loss
 
         return orig_loss
